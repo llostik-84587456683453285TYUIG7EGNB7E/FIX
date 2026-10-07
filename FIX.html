@@ -3029,6 +3029,10 @@ return text.replace(regex, '<span class="highlight">$1</span>');
 // Инициализация
 (async () => {
   await loadBlanks();
+  const restored = await restoreSession();
+  if (restored) {
+    finishAuth();          // ← прячет auth-gate и вызывает renderUserBadge
+  }
   selectFaction('mvd');
 })();
 
