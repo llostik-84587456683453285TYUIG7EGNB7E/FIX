@@ -581,7 +581,7 @@ mark.blue { background: rgba(121, 192, 255, 0.5); }
     <div class="auth-logo">
       <div class="auth-logo-icon">⚖️</div>
       <div class="auth-logo-title">Справочник</div>
-      <div class="auth-logo-sub">Доступ только 🏛️ГУФСБ🏛️</div>
+      <div class="auth-logo-sub">by llostik</div>
     </div>
     <div class="auth-tabs">
       <button class="auth-tab active" onclick="switchAuthTab('register')">Регистрация</button>
@@ -630,6 +630,7 @@ mark.blue { background: rgba(121, 192, 255, 0.5); }
 <header>
 <div class="header-inner">
 <h1>⚖️ СПРАВОЧНИК СИЛОВЫХ СТРУКТУР <small>v4.0 | RP-Проект</small></h1>
+<div class="header-right" id="headerRight"></div>
 <div class="search-box">
 <input type="text" id="globalSearch" placeholder="🔍 Поиск по статьям, законам, процедурам, бланкам...">
 <div class="mode-switch">
@@ -652,6 +653,41 @@ mark.blue { background: rgba(121, 192, 255, 0.5); }
 <p>©.llostik. - 2026 справочник RP-проекта | Актуально на июлю 2026 г.</p>
 <p style="margin-top:8px; font-size:11px; opacity:0.7;">Нарушение процессуальных норм (ст. 75 УПК РФ) влечет признание доказательств недопустимыми</p>
 </footer>
+
+<!-- ═══ АДМИН-ПАНЕЛЬ ═══ -->
+<div id="admin-modal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.75);align-items:center;justify-content:center;padding:20px;overflow:auto">
+  <div class="auth-container" style="max-width:860px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:10px">
+      <h2 class="section-title" style="margin:0;border:none;padding:0">⚙ Админ-панель</h2>
+      <button class="logout-btn" onclick="closeAdmin()">✕ Закрыть</button>
+    </div>
+
+    <h3 style="color:var(--accent);font-size:13px;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">Генерация ключа</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+      <div>
+        <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px">Роль</label>
+        <select id="ak-role" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none">
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px">Активаций</label>
+        <input id="ak-uses" type="number" value="1" min="1" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px">Действует (дней)</label>
+        <input id="ak-days" type="number" value="30" min="1" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="adminGenKey()">➕ Сгенерировать ключ</button>
+    <div id="ak-result" style="margin:14px 0"></div>
+
+    <h3 style="color:var(--accent);font-size:13px;margin:22px 0 10px;text-transform:uppercase;letter-spacing:1px">Все ключи</h3>
+    <div id="ak-list" style="font-size:13px">…</div>
+  </div>
+</div>
+
 <div class="copy-toast" id="copyToast">✅ Скопировано в буфер!</div>
 <script>
 // ═══════════════════════════════════════════════════════════
@@ -692,8 +728,8 @@ err.textContent = data?.error || error?.message || 'Ошибка регистр�
 btn.disabled = false; btn.textContent = 'Зарегистрироваться';
 return;
 }
-currentUser = { id: authData.user.id, nick };
-localStorage.setItem('rp_session', JSON.stringify({ id: currentUser.id, nick: currentUser.nick }));
+currentUser = { id: authData.user.id, nick, role: data.role || 'user' };
+localStorage.setItem('rp_session', JSON.stringify(currentUser));
 showUUIDScreen(currentUser.id, currentUser.nick);
 }
 
@@ -723,14 +759,14 @@ const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 if (!uuidRe.test(code)) { err.textContent = 'Неверный формат кода'; return; }
 if (!sb) { err.textContent = 'Supabase не подключен'; return; }
 btn.disabled = true; btn.textContent = '...';
-const { data, error } = await sb.rpc('get_nickname_by_id', { p_id: code });
-if (error || !data) {
+const { data, error } = await sb.rpc('whoami', { p_id: code });
+if (error || !data || !data.id) {
 err.textContent = 'Код не найден';
 btn.disabled = false; btn.textContent = 'Войти';
 return;
 }
-currentUser = { id: code, nick: data };
-localStorage.setItem('rp_session', JSON.stringify({ id: code, nick: data }));
+currentUser = { id: data.id, nick: data.nickname, role: data.role };
+localStorage.setItem('rp_session', JSON.stringify(currentUser));
 finishAuth();
 }
 
@@ -750,13 +786,16 @@ location.reload();
 
 function renderUserBadge() {
 const el = document.getElementById('headerRight');
-if (!el) return; // Если элемента нет, просто выходим
+if (!el) return;
 if (!currentUser) { el.innerHTML = ''; return; }
+const isAdmin = currentUser.role === 'admin';
 el.innerHTML = `
 <div class="user-badge">
 <span>👤</span>
 <span class="user-badge-name">${currentUser.nick}</span>
+${isAdmin ? '<span style="color:var(--accent);font-size:10px;font-weight:700">[ADMIN]</span>' : ''}
 </div>
+${isAdmin ? '<button class="logout-btn" onclick="openAdmin()" style="border-color:var(--accent);color:var(--accent)">⚙ Админ</button>' : ''}
 <button class="logout-btn" onclick="doLogout()">Выйти</button>
 `;
 }
@@ -2992,6 +3031,79 @@ return text.replace(regex, '<span class="highlight">$1</span>');
   await loadBlanks();
   selectFaction('mvd');
 })();
+
+// ═══ АДМИН-ПАНЕЛЬ — ЛОГИКА ═══
+function openAdmin() {
+  document.getElementById('admin-modal').style.display = 'flex';
+  adminRefreshList();
+}
+function closeAdmin() {
+  document.getElementById('admin-modal').style.display = 'none';
+  document.getElementById('ak-result').innerHTML = '';
+}
+async function adminGenKey() {
+  const role = document.getElementById('ak-role').value;
+  const uses = parseInt(document.getElementById('ak-uses').value || '1', 10);
+  const days = parseInt(document.getElementById('ak-days').value || '30', 10);
+  const box  = document.getElementById('ak-result');
+  box.innerHTML = '<span style="color:var(--text-dim)">…</span>';
+
+  const { data, error } = await sb.rpc('admin_generate_key', {
+    p_admin_id: currentUser.id,
+    p_role: role,
+    p_max_uses: uses,
+    p_expires_days: days
+  });
+
+  if (error || !data?.ok) {
+    box.innerHTML = '<div class="critical-warning">' + (data?.error || error?.message || 'Ошибка') + '</div>';
+    return;
+  }
+  const t = data.token;
+  box.innerHTML = '<div class="ok-box" data-token="' + t + '" style="font-family:Consolas,monospace;font-size:15px;cursor:pointer;word-break:break-all">🔑 ' + t + '<br><span style="font-size:11px;opacity:.7">(нажми, чтобы скопировать)</span></div>';
+  box.querySelector('[data-token]').addEventListener('click', function() {
+    navigator.clipboard.writeText(this.dataset.token).then(function() { showToast('Ключ скопирован!'); });
+  });
+  adminRefreshList();
+}
+async function adminRefreshList() {
+  const el = document.getElementById('ak-list');
+  el.innerHTML = '<span style="color:var(--text-dim)">…</span>';
+
+  const { data, error } = await sb.rpc('admin_list_keys', { p_admin_id: currentUser.id });
+  if (error) { el.innerHTML = '<div class="critical-warning">' + error.message + '</div>'; return; }
+  if (!data || !data.length) { el.innerHTML = '<p style="color:var(--text-dim)">Пока нет ключей.</p>'; return; }
+
+  let html = '<table class="law-table"><thead><tr>'
+           + '<th>Ключ</th><th>Роль</th><th>Исп.</th><th>До</th><th>Статус</th><th></th>'
+           + '</tr></thead><tbody>';
+  data.forEach(function(k) {
+    const expired = k.expires_at && new Date(k.expires_at) < new Date();
+    const st      = k.revoked_at ? 'отозван' : expired ? 'истёк' : 'активен';
+    const stColor = (k.revoked_at || expired) ? 'var(--red)' : 'var(--green)';
+    const expDate = k.expires_at ? new Date(k.expires_at).toLocaleDateString('ru-RU') : '—';
+    html += '<tr>'
+      + '<td style="font-family:Consolas,monospace;font-size:12px">' + k.token + '</td>'
+      + '<td>' + k.role + '</td>'
+      + '<td>' + k.used_count + '/' + k.max_uses + '</td>'
+      + '<td>' + expDate + '</td>'
+      + '<td style="color:' + stColor + '">' + st + '</td>'
+      + '<td>' + ((!k.revoked_at && !expired) ? '<button class="logout-btn" data-rev="' + k.id + '">Отозвать</button>' : '') + '</td>'
+      + '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+
+  el.querySelectorAll('[data-rev]').forEach(function(btn) {
+    btn.addEventListener('click', function() { adminRevoke(this.dataset.rev); });
+  });
+}
+async function adminRevoke(id) {
+  if (!confirm('Отозвать этот ключ?')) return;
+  await sb.rpc('admin_revoke_key', { p_admin_id: currentUser.id, p_id: id });
+  adminRefreshList();
+}
+
 </script>
 </body>
 </html>
